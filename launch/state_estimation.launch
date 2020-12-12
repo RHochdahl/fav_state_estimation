@@ -1,0 +1,47 @@
+<launch>
+    <arg name="simulate" default="true"/>
+    <arg name="record" default="false"/>
+
+    <!-- Vehicle spawn position so that tags are seen -->
+    <arg name="x" default="0.7"/>
+    <arg name="y" default="2.0"/>
+    <arg name="z" default="-0.7"/>
+    <arg name="P" default="0.0" />
+    <arg name="R" default="0.0" />
+    <arg name="Y" default="1.57"/>
+
+    <build_depend>message_generation</build_depend>
+    <exec_depend>message_runtime</exec_depend>
+
+    <group if="$(arg simulate)">
+        <include file="$(find bluerov_sim)/launch/gazebo_base.launch"/>
+
+        <!-- spawn tank and AprilTags -->
+        <include file="$(find bluerov_sim)/launch/spawn_tank.launch">
+        </include>
+
+        <!-- spawn BlueROV model -->
+        <include file="$(find bluerov_sim)/launch/spawn_vehicle.launch">
+            <arg name="x" value="$(arg x)"/>
+            <arg name="y" value="$(arg y)"/>
+            <arg name="z" value="$(arg z)"/>
+            <arg name="R" default="$(arg R)" />
+            <arg name="P" default="$(arg P)" />
+            <arg name="Y" default="$(arg Y)" />
+        </include>
+
+        <!--Our Range Sensor Package that publishes distances to tags -->
+        <include file="$(find range_sensor)/launch/range_sensor.launch">
+        </include>
+
+    </group>
+
+    <param name="simulate" value="$(arg simulate)" type="bool" />
+    
+    <node name="state_estimator" pkg="fav_state_estimation" type="state_estimator.py" output="screen" />
+
+    <group if="$(arg record)">
+        <node name="record" pkg="rosbag" type="record" args="-o ~/fav/bagfiles/bag /depth_setpoint /parameters /mavros/setpoint_motor/setpoint /state /vertical_thrust /control_error /pressure /rosout"/>
+    </group>
+
+</launch>

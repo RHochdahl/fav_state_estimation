@@ -1,0 +1,44 @@
+cmake_minimum_required(VERSION 3.0.2)
+project(fav_state_estimation)
+
+find_package(catkin REQUIRED COMPONENTS
+  dynamic_reconfigure
+  message_generation
+  geometry_msgs
+  std_msgs
+)
+
+generate_dynamic_reconfigure_options(
+  cfg/StateEstimation.cfg
+)
+
+# for c code
+# make sure configure headers are built before any node using them
+# add_dependencies(example_node ${PROJECT_NAME}_gencfg)
+# add_dependencies(your_program ${${PROJECT_NAME}_EXPORTED_TARGETS})
+# add_dependencies(your_library ${${PROJECT_NAME}_EXPORTED_TARGETS})
+
+add_message_files(
+  FILES
+  StateVector2x3D.msg
+)
+
+generate_messages(
+  DEPENDENCIES
+  geometry_msgs
+  std_msgs
+)
+
+catkin_package(
+#  INCLUDE_DIRS include
+#  LIBRARIES depth_controller
+#  CATKIN_DEPENDS other_catkin_pkg
+  CATKIN_DEPENDS message_runtime
+#  DEPENDS system_lib
+  CATKIN_DEPENDS dynamic_reconfigure
+)
+
+include_directories(
+# include
+# ${catkin_INCLUDE_DIRS}
+)

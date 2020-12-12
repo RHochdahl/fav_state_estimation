@@ -1,0 +1,4 @@
+<launch>
+    <node name="keyboard" pkg="bluerov_sim" type="keyboard_control.py" output="screen" />
+    <node name="mixer" pkg="bluerov_sim" type="mixer.py" />
+</launch>
