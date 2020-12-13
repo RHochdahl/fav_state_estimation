@@ -39,6 +39,7 @@
     <param name="simulate" value="$(arg simulate)" type="bool" />
     
     <node name="state_estimator" pkg="fav_state_estimation" type="state_estimator.py" output="screen" />
+    
 
     <group if="$(arg record)">
         <node name="record" pkg="rosbag" type="record" args="-o ~/fav/bagfiles/bag /depth_setpoint /parameters /mavros/setpoint_motor/setpoint /state /vertical_thrust /control_error /pressure /rosout"/>

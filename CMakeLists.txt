@@ -5,6 +5,7 @@ find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   message_generation
   geometry_msgs
+  nav_msgs
   std_msgs
 )
 
@@ -26,6 +27,7 @@ add_message_files(
 generate_messages(
   DEPENDENCIES
   geometry_msgs
+  nav_msgs
   std_msgs
 )
 
