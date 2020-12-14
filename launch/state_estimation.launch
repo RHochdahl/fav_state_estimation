@@ -1,19 +1,27 @@
 <launch>
     <arg name="simulate" default="true"/>
+    <arg name="launch_simulation" default="true"/>
+    <arg name="launch_control" default="true"/>
+    <arg name="launch_x_control" default="true"/>
+    <arg name="launch_y_control" default="true"/>
+    <arg name="launch_z_control" default="true"/>
+    <arg name="launch_roll_control" default="false"/>
+    <arg name="launch_pitch_control" default="false"/>
+    <arg name="launch_yaw_control" default="true"/>
     <arg name="record" default="false"/>
-
-    <!-- Vehicle spawn position so that tags are seen -->
-    <arg name="x" default="0.7"/>
-    <arg name="y" default="2.0"/>
-    <arg name="z" default="-0.7"/>
-    <arg name="P" default="0.0" />
-    <arg name="R" default="0.0" />
-    <arg name="Y" default="1.57"/>
 
     <build_depend>message_generation</build_depend>
     <exec_depend>message_runtime</exec_depend>
 
-    <group if="$(arg simulate)">
+    <group if="$(arg launch_simulation)">
+        <!-- Vehicle spawn position so that tags are seen -->
+        <arg name="x" default="0.7"/>
+        <arg name="y" default="2.0"/>
+        <arg name="z" default="-0.7"/>
+        <arg name="P" default="0.0" />
+        <arg name="R" default="0.0" />
+        <arg name="Y" default="1.57"/>
+
         <include file="$(find bluerov_sim)/launch/gazebo_base.launch"/>
 
         <!-- spawn tank and AprilTags -->
@@ -37,9 +45,20 @@
     </group>
 
     <param name="simulate" value="$(arg simulate)" type="bool" />
-    
+
     <node name="state_estimator" pkg="fav_state_estimation" type="state_estimator.py" output="screen" />
-    
+
+    <group if="$(arg launch_simulation)">
+        <include file="$(find fav_control)/launch/control.launch">
+            <arg name="launch_simulation" value="false"/>
+            <arg name="launch_x_control" value="$(arg launch_x_control)"/>
+            <arg name="launch_y_control" value="$(arg launch_y_control)"/>
+            <arg name="launch_z_control" value="$(arg launch_z_control)"/>
+            <arg name="launch_roll_control" value="$(arg launch_roll_control)"/>
+            <arg name="launch_pitch_control" value="$(arg launch_pitch_control)"/>
+            <arg name="launch_yaw_control" value="$(arg launch_yaw_control)"/>
+        </include>
+    </group>    
 
     <group if="$(arg record)">
         <node name="record" pkg="rosbag" type="record" args="-o ~/fav/bagfiles/bag /depth_setpoint /parameters /mavros/setpoint_motor/setpoint /state /vertical_thrust /control_error /pressure /rosout"/>
