@@ -61,7 +61,7 @@ class StateEstimatorNode():
 
       self.sigma_reset = np.diag([0.0001, 0.0004, 0.0001])
       self.sigma = self.sigma_reset.copy()
-      self.Q_press = 0.0001
+      self.Q_press = np.array([[0.0001]])
       self.Q_range_0 = 0.1
       self.Q_range_lin_fac = 0.01
             
@@ -153,7 +153,7 @@ class StateEstimatorNode():
          self.tau = config.tau
 
          self.R = np.diag([config.Rx, config.Ry, config.Rz])
-         self.Q_press = config.Q_press
+         self.Q_press = np.array([[config.Q_press]])
          self.Q_range_0 = config.Q_range_0
          self.Q_range_lin_fac = config.Q_range_lin_fac
 
@@ -198,10 +198,53 @@ class StateEstimatorNode():
             self.surface_pressure = msg.fluid_pressure
          self.current_pressure = msg.fluid_pressure
          depth = - (msg.fluid_pressure - self.surface_pressure) / self.pascal_per_meter
-         self.ekf(mode=0, z=depth)
+         self.ekf(mode=0, z=np.array([[depth]]))
 
+   def ekf_correct(self, mode=0, z=None, tag_ids=None, del_t=None):
+      with self.data_lock:
+         # rospy.loginfo('\n\nmode = ' + str(mode) + '\nz = ' + str(z) + '\nid = ' + str(tag_id) + '\nacc = ' + str(acc) + '\nmu = ' + str(self.mu))
+         sigma_prior = self.sigma.copy()
+         mu_prior = self.mu.copy()
+         if mode == 0:
+            H = np.array([[0, 0, 1]])
+            h = np.array([[mu_prior[2, 0]]])
+            Q = self.Q_press
+         elif mode == 1:
+            h = np.array([[]])
+            H = np.array([])
+            Q = np.array([[]])
+            for tag_id in tag_ids:
+               dx = mu_prior[0, 0]+self.range_sensor_position_abs[0, 0]-self.tag_coordinates[tag_id-1][0]
+               dy = mu_prior[1, 0]+self.range_sensor_position_abs[1, 0]-self.tag_coordinates[tag_id-1][1]
+               dz = mu_prior[2, 0]+self.range_sensor_position_abs[2, 0]-self.tag_coordinates[tag_id-1][2]
+               h = np.append(h, np.sqrt(dx**2+dy**2+dz**2), axis=0)
+               # rospy.loginfo('\nid = ' + str(tag_id) + '\nh = ' + str(h) + '\nz = ' + str(z))
+               H = np.append(H, (1/h) * np.array([[dx, dy, dz]]), axis=0)
+               Q = np.append(Q, self.Q_range_0+self.Q_range_lin_fac*z, axis=0)
+         # rospy.loginfo('\nh= ' + str(h) + '\nH = ' + str(H) + '\nQ = ' + str(Q) + '\nsigma = ' + str(self.sigma_prior))
+         K = np.linalg.multi_dot([sigma_prior, H.T, np.linalg.inv(np.linalg.multi_dot([H, sigma_prior, H.T]) + Q)])
+         # rospy.loginfo('\nh = ' + str(h) + '\nH = ' + str(H) + '\nQ = ' + str(Q) + '\nK = ' + str(K))
+         if z.shape[0] == 1:
+            self.mu = mu_prior + np.matmul(K, (z-h))
+         else:
+            self.mu = mu_prior + np.matmul(K, (z-h))
+         self.sigma = np.matmul((np.eye(3) - np.matmul(K, H)), sigma_prior)
+         # rospy.loginfo('\nmu = ' + str(self.mu))
+         # rospy.loginfo('\nsigma = ' + str(self.sigma))
+         # for i in range(3):
+         #   if abs(self.mu[i, 0] - mu_prior[i, 0]) > 0.2:
+         # if self.mu[0, 0] < 0.5:
+         #   if mode == 1:
+         #      rospy.loginfo('\n\nmode = ' + str(mode) + '\nid = ' + str(tag_id) + '\nmu_prior = ' + str(mu_prior) + '\ndx = ' + str(dx) + '\ndy = ' + str(dy) + '\ndz = ' + str(dz) + '\nh = ' + str(h) + '\nH = ' + str(H) + '\nz = ' + str(z) + '\nK = ' + str(K) + '\nmu = ' + str(self.mu) + '\nsigma_prior = ' + str(sigma_prior) + '\nsigma = ' + str(self.sigma))
+         #   else:
+         #      rospy.loginfo('\n\nmode = ' + str(mode) + '\nid = ' + str(tag_id) + '\nmu_prior = ' + str(mu_prior) + '\nh = ' + str(h) + '\nH = ' + str(H) + '\nz = ' + str(z) + '\nK = ' + str(K) + '\nmu = ' + str(self.mu) + '\nsigma_prior = ' + str(sigma_prior) + '\nsigma = ' + str(self.sigma))
+         mu_ok = self.check_boundaries()
+         if not mu_ok:
+            rospy.logwarn('\n\nmode = ' + str(mode) + '\nid = ' + str(tag_id) + '\nmu_prior = ' + str(mu_prior) + '\nh = ' + str(h) + '\nz = ' + str(z) + '\nmu = ' + str(self.mu) + '\nsigma = ' + str(self.sigma))
+
+         
    # mode 0: pressure, mode 1: range
-   def ekf(self, mode=0, z=None, tag_id=None, del_t=None, acc=None, acc_cov=None):
+   def ekf(self, mode=0, z=None, tag_id=None, del_t=None):
       with self.data_lock:
          # rospy.loginfo('\n\nmode = ' + str(mode) + '\nz = ' + str(z) + '\nid = ' + str(tag_id) + '\nacc = ' + str(acc) + '\nmu = ' + str(self.mu))
          sigma_prior = self.sigma.copy()
