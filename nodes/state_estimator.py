@@ -32,7 +32,10 @@ class StateEstimatorNode():
 
       self.boundaries = np.array([[0, 1.6],
                                  [0, 3.35],
-                                 [-1.4, 0]])
+                                 [-1.4, 0],
+                                 [-1.0, 1.0],
+                                 [-1.0, 1.0],
+                                 [-1.0, 1.0]])
 
       tag_system_origin = np.array([0.5, 3.35, -0.5])
       self.calculate_tag_coordinates(tag_system_origin)
@@ -268,7 +271,7 @@ class StateEstimatorNode():
    def check_boundaries(self):
       within_boundaries = True
       mu_buf = self.mu.copy()
-      for i in range(3):
+      for i in range(6):
          if self.mu[i, 0] < self.boundaries[i, 0]:
             self.mu[i, 0] = self.boundaries[i, 0]
             within_boundaries = False
