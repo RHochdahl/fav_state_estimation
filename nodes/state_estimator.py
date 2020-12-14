@@ -44,10 +44,8 @@ class StateEstimatorNode():
       self.x2hat_prev = np.array([0.0, 0.0, 0.0])
       self.prev_smo_time = None
 
-      self.tag_coordinates = [np.array([0.5, 3.35, -0.5]),
-                              np.array([1.1, 3.35, -0.5]),
-                              np.array([0.5, 3.35, -0.9]),
-                              np.array([1.1, 3.35, -0.9])]
+      tag_system_origin = np.array([0.5, 3.35, -0.5])
+      self.calculate_tag_coordinates(tag_system_origin)
 
       self.range_sensor_position_rel = np.array([[0.2], [0], [0.1]])
       self.range_sensor_position_abs = self.range_sensor_position_rel.copy()
@@ -157,14 +155,24 @@ class StateEstimatorNode():
          self.Q_range_0 = config.Q_range_0
          self.Q_range_lin_fac = config.Q_range_lin_fac
 
-         self.tag_coordinates = [np.array([config.groups.groups.tags.groups.tag_1.parameters.x, config.groups.groups.tags.groups.tag_1.parameters.y, config.groups.groups.tags.groups.tag_1.parameters.z]),
-                                 np.array([config.groups.groups.tags.groups.tag_2.parameters.x, config.groups.groups.tags.groups.tag_2.parameters.y, config.groups.groups.tags.groups.tag_2.parameters.z]),
-                                 np.array([config.groups.groups.tags.groups.tag_3.parameters.x, config.groups.groups.tags.groups.tag_3.parameters.y, config.groups.groups.tags.groups.tag_3.parameters.z]),
-                                 np.array([config.groups.groups.tags.groups.tag_4.parameters.x, config.groups.groups.tags.groups.tag_4.parameters.y, config.groups.groups.tags.groups.tag_4.parameters.z])]
+         rospy.loginfo('\nold tag coordinates:\n' + str(self.tag_coordinates))
+
+         tag_system_origin = np.array([config.groups.groups.tag_system.parameters.x, config.groups.groups.tag_system.parameters.y, config.groups.groups.tag_system.parameters.z])
+         tag_system_orientation = config.groups.groups.tag_system.parameters.phi
+         self.calculate_tag_coordinates(tag_system_origin, tag_system_orientation)
+
+         rospy.loginfo('\nnew tag coordinates:\n' + str(self.tag_coordinates))
 
          self.c_scaling = config.scaling_variable
 
       return config
+
+   def calculate_tag_coordinates(self, origin, orientation=0):
+      orientation = np.pi / 180
+      self.tag_coordinates = [np.array([origin[0], origin[1], origin[2]]),
+                              np.array([origin[0]+0.6*np.cos(orientation), origin[1], origin[2]+0.6*np.sin(orientation)]),
+                              np.array([origin[0]+0.4*np.sin(orientation), origin[1], origin[2]-0.4*np.cos(orientation)]),
+                              np.array([origin[0]+0.6*np.cos(orientation)+0.4*np.sin(orientation), origin[1], origin[2]+0.6*np.sin(orientation)-0.4*np.cos(orientation)])]
 
    def on_imu(self, msg):
       with self.data_lock:
@@ -183,12 +191,16 @@ class StateEstimatorNode():
          self.time_range = self.last_sensor_time
          if len(msg.measurements) == 0:
             rospy.logwarn_throttle(1.0, 'No Tags detected!')
+            return
          elif len(msg.measurements) == 1:
             rospy.logwarn_throttle(1.0, 'Only one Tag detected!')
-         for meas in msg.measurements:
-            z = meas.range
-            if self.time_imu > 0:
-               self.ekf(mode=1, z=meas.range, tag_id=meas.id)
+         z = np.empty([0, 1])
+         tag_ids = []
+         if self.time_imu > 0:
+            for meas in msg.measurements:
+               z = np.append(z, np.array([[meas.range]]), axis=0)
+               tag_ids.append(meas.id)
+            self.ekf_correct(mode=1, z=z, tag_ids=tag_ids)
 
    def on_pressure(self, msg):
       with self.data_lock:
@@ -198,9 +210,9 @@ class StateEstimatorNode():
             self.surface_pressure = msg.fluid_pressure
          self.current_pressure = msg.fluid_pressure
          depth = - (msg.fluid_pressure - self.surface_pressure) / self.pascal_per_meter
-         self.ekf(mode=0, z=np.array([[depth]]))
+         self.ekf_correct(mode=0, z=np.array([[depth]]))
 
-   def ekf_correct(self, mode=0, z=None, tag_ids=None, del_t=None):
+   def ekf_correct(self, mode=0, z=None, tag_ids=None):
       with self.data_lock:
          # rospy.loginfo('\n\nmode = ' + str(mode) + '\nz = ' + str(z) + '\nid = ' + str(tag_id) + '\nacc = ' + str(acc) + '\nmu = ' + str(self.mu))
          sigma_prior = self.sigma.copy()
@@ -210,18 +222,19 @@ class StateEstimatorNode():
             h = np.array([[mu_prior[2, 0]]])
             Q = self.Q_press
          elif mode == 1:
-            h = np.array([[]])
-            H = np.array([])
-            Q = np.array([[]])
-            for tag_id in tag_ids:
-               dx = mu_prior[0, 0]+self.range_sensor_position_abs[0, 0]-self.tag_coordinates[tag_id-1][0]
-               dy = mu_prior[1, 0]+self.range_sensor_position_abs[1, 0]-self.tag_coordinates[tag_id-1][1]
-               dz = mu_prior[2, 0]+self.range_sensor_position_abs[2, 0]-self.tag_coordinates[tag_id-1][2]
-               h = np.append(h, np.sqrt(dx**2+dy**2+dz**2), axis=0)
-               # rospy.loginfo('\nid = ' + str(tag_id) + '\nh = ' + str(h) + '\nz = ' + str(z))
-               H = np.append(H, (1/h) * np.array([[dx, dy, dz]]), axis=0)
-               Q = np.append(Q, self.Q_range_0+self.Q_range_lin_fac*z, axis=0)
-         # rospy.loginfo('\nh= ' + str(h) + '\nH = ' + str(H) + '\nQ = ' + str(Q) + '\nsigma = ' + str(self.sigma_prior))
+            h = np.zeros([len(tag_ids), 1])
+            H = np.zeros([len(tag_ids), 3])
+            Q = np.zeros([len(tag_ids), len(tag_ids)])
+            for i in range(len(tag_ids)):
+               dx = mu_prior[0, 0]+self.range_sensor_position_abs[0, 0]-self.tag_coordinates[tag_ids[i]-1][0]
+               dy = mu_prior[1, 0]+self.range_sensor_position_abs[1, 0]-self.tag_coordinates[tag_ids[i]-1][1]
+               dz = mu_prior[2, 0]+self.range_sensor_position_abs[2, 0]-self.tag_coordinates[tag_ids[i]-1][2]
+               h[i, 0] = np.sqrt(dx**2+dy**2+dz**2)
+               # rospy.loginfo('\nid = ' + str(tag_ids[i]) + '\n' + str(tag_ids[i]-1) + '\n' + str(self.tag_coordinates[tag_ids[i]-1]) + '\nh = ' + str(h[i, 0]) + '\nz = ' + str(z[i, 0]))
+               H[i, :] = (1/h[i, 0]) * np.array([dx, dy, dz])
+               Q[i, i] = self.Q_range_0+self.Q_range_lin_fac*z[i, 0]
+         # rospy.loginfo_once(str(self.tag_coordinates) + str(self.tag_coordinates[0]) + str(self.tag_coordinates[1]) + str(self.tag_coordinates[2]) + str(self.tag_coordinates[3]))
+         # rospy.loginfo('\ntag_ids: ' + str(tag_ids) + '\nh= ' + str(h) + '\nH = ' + str(H) + '\nQ = ' + str(Q) + '\nsigma = ' + str(sigma_prior))
          K = np.linalg.multi_dot([sigma_prior, H.T, np.linalg.inv(np.linalg.multi_dot([H, sigma_prior, H.T]) + Q)])
          # rospy.loginfo('\nh = ' + str(h) + '\nH = ' + str(H) + '\nQ = ' + str(Q) + '\nK = ' + str(K))
          if z.shape[0] == 1:
@@ -244,7 +257,7 @@ class StateEstimatorNode():
 
          
    # mode 0: pressure, mode 1: range
-   def ekf(self, mode=0, z=None, tag_id=None, del_t=None):
+   def ekf(self, mode=0, z=None, tag_id=None):
       with self.data_lock:
          # rospy.loginfo('\n\nmode = ' + str(mode) + '\nz = ' + str(z) + '\nid = ' + str(tag_id) + '\nacc = ' + str(acc) + '\nmu = ' + str(self.mu))
          sigma_prior = self.sigma.copy()

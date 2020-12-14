@@ -44,10 +44,8 @@ class StateEstimatorNode():
       self.x2hat_prev = np.array([0.0, 0.0, 0.0])
       self.prev_smo_time = None
 
-      self.tag_coordinates = [np.array([0.5, 3.35, -0.5]),
-                              np.array([1.1, 3.35, -0.5]),
-                              np.array([0.5, 3.35, -0.9]),
-                              np.array([1.1, 3.35, -0.9])]
+      tag_system_origin = np.array([0.5, 3.35, -0.5])
+      self.calculate_tag_coordinates(tag_system_origin)
 
       self.range_sensor_position_rel = np.array([[0.2], [0], [0.1]])
       self.range_sensor_position_abs = self.range_sensor_position_rel.copy()
@@ -146,7 +144,9 @@ class StateEstimatorNode():
                self.mu[i+3, 0] = 0.0
             config.reset_lin_vel = False
 
+         if config.reset_mu:
             self.mu = self.mu_reset.copy()
+            config.reset_mu = False
 
          self.rho = config.rho
          self.phi = config.phi
@@ -157,14 +157,21 @@ class StateEstimatorNode():
          self.Q_range_0 = config.Q_range_0
          self.Q_range_lin_fac = config.Q_range_lin_fac
 
-         self.tag_coordinates = [np.array([config.groups.groups.tags.groups.tag_1.parameters.x, config.groups.groups.tags.groups.tag_1.parameters.y, config.groups.groups.tags.groups.tag_1.parameters.z]),
-                                 np.array([config.groups.groups.tags.groups.tag_2.parameters.x, config.groups.groups.tags.groups.tag_2.parameters.y, config.groups.groups.tags.groups.tag_2.parameters.z]),
-                                 np.array([config.groups.groups.tags.groups.tag_3.parameters.x, config.groups.groups.tags.groups.tag_3.parameters.y, config.groups.groups.tags.groups.tag_3.parameters.z]),
-                                 np.array([config.groups.groups.tags.groups.tag_4.parameters.x, config.groups.groups.tags.groups.tag_4.parameters.y, config.groups.groups.tags.groups.tag_4.parameters.z])]
+         tag_system_origin = np.array([config.groups.groups.tag_system.parameters.x, config.groups.groups.tag_system.parameters.y, config.groups.groups.tag_system.parameters.z])
+         tag_system_orientation = config.groups.groups.tag_system.parameters.phi
+         self.calculate_tag_coordinates(tag_system_origin, tag_system_orientation)
 
          self.c_scaling = config.scaling_variable
 
       return config
+
+   def calculate_tag_coordinates(self, origin, orientation=0):
+      orientation = np.pi / 180
+      self.tag_coordinates = [np.array([origin[0], origin[1], origin[2]]),
+                              np.array([origin[0]+0.6*np.cos(orientation), origin[1], origin[2]+0.6*np.sin(orientation)]),
+                              np.array([origin[0]+0.4*np.sin(orientation), origin[1], origin[2]-0.4*np.cos(orientation)]),
+                              np.array([origin[0]+0.6*np.cos(orientation)+0.4*np.sin(orientation), origin[1], origin[2]+0.6*np.sin(orientation)-0.4*np.cos(orientation)])]
+
 
    def on_imu(self, msg):
       with self.data_lock:
