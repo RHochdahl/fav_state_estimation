@@ -30,12 +30,24 @@ class StateEstimatorNode():
          self.surface_pressure = None
       self.current_pressure = self.surface_pressure
 
+      self.acc_published = False
+
       self.boundaries = np.array([[0, 1.6],
                                  [0, 3.35],
                                  [-1.4, 0],
                                  [-0.5, 0.5],
                                  [-0.5, 0.5],
                                  [-0.5, 0.5]])
+
+      self.rho = 2.5
+      self.phi = 0.3
+      self.tau = 0.1
+
+      self.linear_velocity = np.array([0.0, 0.0, 0.0])
+      self.x_prev = np.array([0.0, 0.0, -0.5])
+      self.x1hat_prev = np.array([0.0, 0.0, -0.5])
+      self.x2hat_prev = np.array([0.0, 0.0, 0.0])
+      self.prev_smo_time = None
 
       tag_system_origin = np.array([0.5, 3.35, -0.5])
       self.calculate_tag_coordinates(tag_system_origin)
@@ -52,7 +64,9 @@ class StateEstimatorNode():
 
       self.sigma_reset = np.eye(6)
       self.sigma = self.sigma_reset.copy()
-      self.R = np.array(np.diag([1e-4, 1e-4, 1e-2, 1e-6, 1e-6, 1e-4]))
+      self.R_with_a = np.array(np.diag([1e-4, 1e-4, 1e-2, 1e-6, 1e-6, 1e-4]))
+      self.R_without_a = np.array(np.diag([1e-4, 1e-4, 1e-2, 1e-2, 1e-2, 1e-2]))
+      self.R = self.R_with_a.copy()
       self.Q_press = 0.0001
       self.Q_range_0 = 0.1
       self.Q_range_lin_fac = 0.01
@@ -92,6 +106,8 @@ class StateEstimatorNode():
             if time - self.time_pressure > 0.05:
                rospy.logwarn_throttle(5.0, 'No Pressure Measurements received!')
             if self.time_imu > 0:
+               if not self.acc_published:
+                  self.linear_velocity = self.smo(self.mu[:3, 0])
                self.publish_state()
 
          rate.sleep()
@@ -105,9 +121,17 @@ class StateEstimatorNode():
          msg.pose.pose.position.x = self.mu[0, 0]
          msg.pose.pose.position.y = self.mu[1, 0]
          msg.pose.pose.position.z = self.mu[2, 0]
-         msg.twist.twist.linear.x = self.mu[3, 0]
-         msg.twist.twist.linear.y = self.mu[4, 0]
-         msg.twist.twist.linear.z = self.mu[5, 0]
+         msg.pose.covariance[0] = self.sigma[0, 0]
+         msg.pose.covariance[7] = self.sigma[1, 1]
+         msg.pose.covariance[14] = self.sigma[2, 2]
+         if self.acc_published:
+            msg.twist.twist.linear.x = self.mu[3, 0]
+            msg.twist.twist.linear.y = self.mu[4, 0]
+            msg.twist.twist.linear.z = self.mu[5, 0]
+         else:
+            msg.twist.twist.linear.x = self.linear_velocity[0]
+            msg.twist.twist.linear.y = self.linear_velocity[1]
+            msg.twist.twist.linear.z = self.linear_velocity[2]
          if self.angular_velocity is not None:
             msg.twist.twist.angular.x = self.angular_velocity[0]
             msg.twist.twist.angular.y = self.angular_velocity[1]
@@ -157,7 +181,6 @@ class StateEstimatorNode():
                               np.array([origin[0]+0.4*np.sin(orientation), origin[1], origin[2]-0.4*np.cos(orientation)]),
                               np.array([origin[0]+0.6*np.cos(orientation)+0.4*np.sin(orientation), origin[1], origin[2]+0.6*np.sin(orientation)-0.4*np.cos(orientation)])]
 
-
    def on_imu(self, msg):
       with self.data_lock:
          self.time_imu = msg.header.stamp.to_sec()
@@ -171,9 +194,11 @@ class StateEstimatorNode():
          # rospy.loginfo_throttle(1.0, 'pos_range_sensor: ' + str(self.range_sensor_position_abs))
          if (msg.linear_acceleration.x == 0) and (msg.linear_acceleration.y == 0) and (msg.linear_acceleration.z == 0):
             rospy.logerr_once("Zero Acceleration measured! Ignoring Measurement.")
+            self.R = self.R_without_a.copy()
             acc = np.zeros([3, 1])
          else:
             acc = np.array([[msg.linear_acceleration.x], [msg.linear_acceleration.y], [msg.linear_acceleration.z-9.81]])
+            self.acc_published = True
          self.ekf_predict(del_t=del_t, acc_loc=acc)
 
    def on_range(self, msg):
@@ -221,8 +246,8 @@ class StateEstimatorNode():
                         [0, 0, 0, 0, 0, 1]])
          self.sigma = np.matmul(np.matmul(G, sigma_prior), G.T) + self.R
          mu_ok = self.check_boundaries()
-         if not mu_ok:
-            rospy.logwarn('\n\nmode = predict\nmu_prior = ' + str(mu_prior) + '\nacc = ' + str(acc_glob) + '\nmu = ' + str(self.mu) + '\nsigma = ' + str(self.sigma))
+         # if not mu_ok:
+         #   rospy.logwarn('\n\nmode = predict\nmu_prior = ' + str(mu_prior) + '\nacc = ' + str(acc_glob) + '\nmu = ' + str(self.mu) + '\nsigma = ' + str(self.sigma))
 
    # mode 0: pressure, mode 1: range
    def ekf_correct(self, mode=0, z=None, tag_ids=None):
@@ -265,8 +290,8 @@ class StateEstimatorNode():
          #   else:
          #      rospy.loginfo('\n\nmode = ' + str(mode) + '\nid = ' + str(tag_id) + '\nmu_prior = ' + str(mu_prior) + '\nh = ' + str(h) + '\nH = ' + str(H) + '\nz = ' + str(z) + '\nK = ' + str(K) + '\nmu = ' + str(self.mu) + '\nsigma_prior = ' + str(sigma_prior) + '\nsigma = ' + str(self.sigma))
          mu_ok = self.check_boundaries()
-         if not mu_ok:
-            rospy.logwarn('\n\nmode = ' + str(mode) + '\ntag_ids = ' + str(tag_ids) + '\nmu_prior = ' + str(mu_prior) + '\nh = ' + str(h) + '\nz = ' + str(z) + '\nmu = ' + str(self.mu) + '\nsigma = ' + str(self.sigma))
+         # if not mu_ok:
+         #   rospy.logwarn('\n\nmode = ' + str(mode) + '\ntag_ids = ' + str(tag_ids) + '\nmu_prior = ' + str(mu_prior) + '\nh = ' + str(h) + '\nz = ' + str(z) + '\nmu = ' + str(self.mu) + '\nsigma = ' + str(self.sigma))
 
    def check_boundaries(self):
       within_boundaries = True
@@ -282,7 +307,28 @@ class StateEstimatorNode():
          rospy.logwarn_throttle(1.0, 'Estimated state outside of boundaries!' + '\nmu = ' + str(mu_buf))
          return False
       else:
-         return True      
+         return True
+   
+   def smo(self, x):
+      time = rospy.get_time()
+      if self.prev_smo_time is None:
+         self.prev_smo_time = time
+         return np.zeros(3)
+      del_t = time - self.prev_smo_time
+      self.prev_smo_time = time
+      x1hat = np.zeros(3)
+      x2hat = np.zeros(3)
+      for i in range(3):
+         x1hat[i] = self.x1hat_prev[i] + del_t*self.x2hat_prev[i]
+         x2hat[i] = self.x2hat_prev[i] + (del_t/self.tau) * (-self.x2hat_prev[i]-self.rho*self.sat((self.x1hat_prev[i]-self.x_prev[i])/self.phi))
+         if x2hat[i] > self.boundaries[3+i, 1]:
+            x2hat[i] = self.boundaries[3+i, 1]
+         elif x2hat[i] < self.boundaries[3+i, 0]:
+            x2hat[i] = self.boundaries[3+i, 0]
+         self.x_prev[i] = x[i]
+         self.x1hat_prev[i] = x1hat[i]
+         self.x2hat_prev[i] = x2hat[i]
+      return x2hat
 
    def sat(self, x):
       return min(1.0, max(-1.0, x))

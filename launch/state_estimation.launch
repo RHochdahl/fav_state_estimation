@@ -62,7 +62,7 @@
     </group>    
 
     <group if="$(arg record)">
-        <node name="record" pkg="rosbag" type="record" args="-o ~/fav/bagfiles/bag /depth_setpoint /parameters /mavros/setpoint_motor/setpoint /state /vertical_thrust /control_error /pressure /rosout"/>
+        <node name="record" pkg="rosbag" type="record" args="-o ~/fav/bagfiles/bag /x_setpoint /y_setpoint /z_setpoint /yaw_setpoint /mavros/setpoint_motor/setpoint /estimated_state /yaw /thrust /lateral_thrust /vertical_thrust /pressure /mavros/imu/data /range /rosout"/>
     </group>
 
 </launch>
