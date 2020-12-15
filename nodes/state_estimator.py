@@ -33,9 +33,9 @@ class StateEstimatorNode():
       self.boundaries = np.array([[0, 1.6],
                                  [0, 3.35],
                                  [-1.4, 0],
-                                 [-1.0, 1.0],
-                                 [-1.0, 1.0],
-                                 [-1.0, 1.0]])
+                                 [-0.5, 0.5],
+                                 [-0.5, 0.5],
+                                 [-0.5, 0.5]])
 
       tag_system_origin = np.array([0.5, 3.35, -0.5])
       self.calculate_tag_coordinates(tag_system_origin)

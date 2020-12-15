@@ -47,8 +47,9 @@
     <param name="simulate" value="$(arg simulate)" type="bool" />
 
     <node name="state_estimator" pkg="fav_state_estimation" type="state_estimator.py" output="screen" />
+    <node name="setpoints" pkg="fav_state_estimation" type="setpoints.py" output="screen" />
 
-    <group if="$(arg launch_simulation)">
+    <group if="$(arg launch_control)">
         <include file="$(find fav_control)/launch/control.launch">
             <arg name="launch_simulation" value="false"/>
             <arg name="launch_x_control" value="$(arg launch_x_control)"/>

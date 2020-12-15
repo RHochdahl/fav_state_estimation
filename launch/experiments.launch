@@ -1,0 +1,12 @@
+<launch>
+
+    <build_depend>message_generation</build_depend>
+    <exec_depend>message_runtime</exec_depend>
+
+    <include file="$(find fav_control)/launch/control.launch">
+        <arg name="simulate" value="false"/>
+        <arg name="launch_simulation" value="false"/>
+        <arg name="record" value="true"/>
+    </include>
+    
+</launch>
