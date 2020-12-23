@@ -84,6 +84,7 @@ class StateEstimatorNode():
 
       self.pressure_sub = rospy.Subscriber("pressure", FluidPressure, self.on_pressure, queue_size=1)
       self.imu_sub = rospy.Subscriber("mavros/imu/data", Imu, self.on_imu, queue_size=1)
+      self.imu_raw_sub = rospy.Subscriber("mavros/imu/data_raw", Imu, self.on_raw_imu, queue_size=1)
       self.range_sub = rospy.Subscriber("ranges", RangeMeasurementArray, self.on_range, queue_size=1)
 
       self.server = Server(StateEstimationConfig, self.server_callback)
@@ -106,8 +107,7 @@ class StateEstimatorNode():
             if time - self.time_pressure > 0.05:
                rospy.logwarn_throttle(5.0, 'No Pressure Measurements received!')
             if self.time_imu > 0:
-               if not self.acc_published:
-                  self.linear_velocity = self.smo(self.mu[:3, 0])
+               self.linear_velocity = self.smo(self.mu[:3, 0])
                self.publish_state()
 
          rate.sleep()
@@ -124,14 +124,9 @@ class StateEstimatorNode():
          msg.pose.covariance[0] = self.sigma[0, 0]
          msg.pose.covariance[7] = self.sigma[1, 1]
          msg.pose.covariance[14] = self.sigma[2, 2]
-         if self.acc_published:
-            msg.twist.twist.linear.x = self.mu[3, 0]
-            msg.twist.twist.linear.y = self.mu[4, 0]
-            msg.twist.twist.linear.z = self.mu[5, 0]
-         else:
-            msg.twist.twist.linear.x = self.linear_velocity[0]
-            msg.twist.twist.linear.y = self.linear_velocity[1]
-            msg.twist.twist.linear.z = self.linear_velocity[2]
+         msg.twist.twist.linear.x = self.linear_velocity[0]
+         msg.twist.twist.linear.y = self.linear_velocity[1]
+         msg.twist.twist.linear.z = self.linear_velocity[2]
          if self.angular_velocity is not None:
             msg.twist.twist.angular.x = self.angular_velocity[0]
             msg.twist.twist.angular.y = self.angular_velocity[1]
@@ -181,11 +176,17 @@ class StateEstimatorNode():
                               np.array([origin[0]+0.4*np.sin(orientation), origin[1], origin[2]-0.4*np.cos(orientation)]),
                               np.array([origin[0]+0.6*np.cos(orientation)+0.4*np.sin(orientation), origin[1], origin[2]+0.6*np.sin(orientation)-0.4*np.cos(orientation)])]
 
+   def on_raw_imu(self, msg):
+      rospy.loginfo_once('Raw IMU Data received.')
+
    def on_imu(self, msg):
       with self.data_lock:
-         self.time_imu = msg.header.stamp.to_sec()
-         del_t = self.time_imu - self.last_sensor_time
-         self.last_sensor_time = self.time_imu
+         # self.time_imu = msg.header.stamp.to_sec()
+         # del_t = self.time_imu - self.last_sensor_time
+         # self.last_sensor_time = self.time_imu
+         self.last_sensor_time = msg.header.stamp.to_sec()
+         del_t = self.last_sensor_time - self.time_imu
+         self.time_imu = self.last_sensor_time
          self.orientation = msg.orientation
          quaternion = [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w]
          self.rot_matrix = tf.transformations.quaternion_matrix(quaternion)[:3, :3]
