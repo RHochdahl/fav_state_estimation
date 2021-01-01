@@ -39,9 +39,9 @@ class StateEstimatorNode():
                                  [-0.5, 0.5],
                                  [-0.5, 0.5]])
 
-      self.rho = 2.5
-      self.phi = 0.3
-      self.tau = 0.1
+      self.rho = np.array([0.4, 0.4, 2.5])
+      self.phi = np.array([1.0, 1.0, 0.3])
+      self.tau = np.array([0.2, 0.2, 0.1])
 
       self.linear_velocity = np.array([0.0, 0.0, 0.0])
       self.x_prev = np.array([0.0, 0.0, -0.5])
@@ -64,8 +64,8 @@ class StateEstimatorNode():
 
       self.sigma_reset = np.eye(6)
       self.sigma = self.sigma_reset.copy()
-      self.R_with_a = np.array(np.diag([1e-4, 1e-4, 1e-2, 1e-6, 1e-6, 1e-4]))
-      self.R_without_a = np.array(np.diag([1e-4, 1e-4, 1e-2, 1e-2, 1e-2, 1e-2]))
+      self.R_with_a = np.array(np.diag([1e-2, 1e-2, 1e-2, 1e-4, 1e-4, 1e-4]))
+      self.R_without_a = np.array(np.diag([1e-2, 1e-2, 1e-2, 1e-4, 1e-4, 1e-4]))
       self.R = self.R_with_a.copy()
       self.Q_press = 0.0001
       self.Q_range_0 = 0.1
@@ -166,6 +166,16 @@ class StateEstimatorNode():
          self.calculate_tag_coordinates(tag_system_origin, tag_system_orientation)
 
          self.c_scaling = config.scaling_variable
+
+         self.rho[0] = config.rho_x
+         self.rho[1] = config.rho_y
+         self.rho[2] = config.rho_z
+         self.phi[0] = config.phi_x
+         self.phi[1] = config.phi_y
+         self.phi[2] = config.phi_z
+         self.tau[0] = config.tau_x
+         self.tau[1] = config.tau_y
+         self.tau[2] = config.tau_z
 
       return config
 
@@ -321,7 +331,7 @@ class StateEstimatorNode():
       x2hat = np.zeros(3)
       for i in range(3):
          x1hat[i] = self.x1hat_prev[i] + del_t*self.x2hat_prev[i]
-         x2hat[i] = self.x2hat_prev[i] + (del_t/self.tau) * (-self.x2hat_prev[i]-self.rho*self.sat((self.x1hat_prev[i]-self.x_prev[i])/self.phi))
+         x2hat[i] = self.x2hat_prev[i] + (del_t/self.tau[i]) * (-self.x2hat_prev[i]-self.rho[i]*self.sat((self.x1hat_prev[i]-self.x_prev[i])/self.phi[i]))
          if x2hat[i] > self.boundaries[3+i, 1]:
             x2hat[i] = self.boundaries[3+i, 1]
          elif x2hat[i] < self.boundaries[3+i, 0]:
