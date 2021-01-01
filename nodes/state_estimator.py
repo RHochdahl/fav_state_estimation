@@ -22,6 +22,7 @@ class StateEstimatorNode():
       self.data_lock = threading.RLock()
 
       self.simulate = rospy.get_param("simulate")
+      self.use_imu_acceleration = rospy.get_param("use_imu_acceleration")
 
       self.pascal_per_meter = 9.78057e3  # g*rho
       if self.simulate:
@@ -70,7 +71,7 @@ class StateEstimatorNode():
       self.Q_press = 0.0001
       self.Q_range_0 = 0.1
       self.Q_range_lin_fac = 0.01
-      self.c_scaling = 1e-9
+      self.c_scaling = 0.15
             
       rospy.init_node("state_estimator")
       self.state_pub = rospy.Publisher("estimated_state", Odometry, queue_size=1)
@@ -203,7 +204,10 @@ class StateEstimatorNode():
          self.range_sensor_position_abs = np.matmul(self.rot_matrix, self.range_sensor_position_rel)
          self.angular_velocity = np.matmul(self.rot_matrix, np.array([[msg.angular_velocity.x], [msg.angular_velocity.y], [msg.angular_velocity.z]]))
          # rospy.loginfo_throttle(1.0, 'pos_range_sensor: ' + str(self.range_sensor_position_abs))
-         if (msg.linear_acceleration.x == 0) and (msg.linear_acceleration.y == 0) and (msg.linear_acceleration.z == 0):
+         if not self.use_imu_acceleration:
+            self.R = self.R_without_a.copy()
+            acc = np.zeros([3, 1])
+         elif (msg.linear_acceleration.x == 0) and (msg.linear_acceleration.y == 0) and (msg.linear_acceleration.z == 0):
             rospy.logerr_once("Zero Acceleration measured! Ignoring Measurement.")
             self.R = self.R_without_a.copy()
             acc = np.zeros([3, 1])
@@ -309,10 +313,10 @@ class StateEstimatorNode():
       mu_buf = self.mu.copy()
       for i in range(6):
          if self.mu[i, 0] < self.boundaries[i, 0]:
-            self.mu[i, 0] = self.boundaries[i, 0]
+            self.mu[i, 0] = self.boundaries[i, 0] + 0.1
             within_boundaries = False
          elif self.mu[i, 0] > self.boundaries[i, 1]:
-            self.mu[i, 0] = self.boundaries[i, 1]
+            self.mu[i, 0] = self.boundaries[i, 1] - 0.1
             within_boundaries = False
       if not within_boundaries:
          rospy.logwarn_throttle(1.0, 'Estimated state outside of boundaries!' + '\nmu = ' + str(mu_buf))

@@ -32,11 +32,14 @@ class StateEstimatorNode():
 
       self.boundaries = np.array([[0, 1.6],
                                  [0, 3.35],
-                                 [-1.4, 0]])
+                                 [-1.4, 0],
+                                 [-0.5, 0.5],
+                                 [-0.5, 0.5],
+                                 [-0.5, 0.5]])
 
-      self.rho = 2.5
-      self.phi = 0.3
-      self.tau = 0.1
+      self.rho = np.array([0.4, 0.4, 2.5])
+      self.phi = np.array([1.0, 1.0, 0.3])
+      self.tau = np.array([0.2, 0.2, 0.1])
 
       self.linear_velocity = np.array([0.0, 0.0, 0.0])
       self.x_prev = np.array([0.0, 0.0, -0.5])
@@ -59,9 +62,11 @@ class StateEstimatorNode():
 
       self.sigma_reset = np.eye(3)
       self.sigma = self.sigma_reset.copy()
-      self.Q_press = np.array([[0.0001]])
+      self.R = np.array(np.diag([1e-2, 1e-2, 1e-2]))
+      self.Q_press = 0.0001
       self.Q_range_0 = 0.1
       self.Q_range_lin_fac = 0.01
+      self.c_scaling = 0.015
             
       rospy.init_node("state_estimator")
       self.state_pub = rospy.Publisher("estimated_state", Odometry, queue_size=1)
@@ -83,27 +88,25 @@ class StateEstimatorNode():
       rate = rospy.Rate(50.0)
 
       while not rospy.is_shutdown():
-         if self.prev_smo_time is None:
-            self.prev_smo_time = rospy.get_time()
+         time = rospy.get_time()
+         if (time - self.last_sensor_time) > 0.05:
+            rospy.logwarn_throttle(5.0, 'No Measurements received!')
          else:
-            time = rospy.get_time()
-            if (time - self.last_sensor_time) > 0.05:
-               rospy.logwarn_throttle(5.0, 'No Measurements received!')
-            else:
-               if time - self.time_imu > 0.05:
-                  rospy.logwarn_throttle(5.0, 'No IMU-Measurements received!')
-               if time - self.time_range > 0.4:
-                  rospy.logwarn_throttle(5.0, 'No Range Measurements received!')
-               if time - self.time_pressure > 0.05:
-                  rospy.logwarn_throttle(5.0, 'No Pressure Measurements received!')
-               
-               # self.linear_velocity = self.smo(self.mu[:3, 0])
-               if self.time_imu > 0:
-                  self.publish_state()
+            if time - self.time_imu > 0.05:
+               rospy.logwarn_throttle(5.0, 'No IMU-Measurements received!')
+            if time - self.time_range > 0.4:
+               rospy.logwarn_throttle(5.0, 'No Range Measurements received!')
+            if time - self.time_pressure > 0.05:
+               rospy.logwarn_throttle(5.0, 'No Pressure Measurements received!')
             
-            with self.data_lock:      
-               sigma_prior = self.sigma.copy()
-               self.sigma = (1+self.c_scaling) * sigma_prior
+            # self.linear_velocity = self.smo(self.mu[:3, 0])
+            if self.time_imu > 0:
+               self.linear_velocity = self.smo(self.mu[:3, 0])
+               self.publish_state()
+         
+         with self.data_lock:      
+            sigma_prior = self.sigma.copy()
+            self.sigma = sigma_prior + self.R
 
          rate.sleep()
    
@@ -116,6 +119,9 @@ class StateEstimatorNode():
          msg.pose.pose.position.x = self.mu[0, 0]
          msg.pose.pose.position.y = self.mu[1, 0]
          msg.pose.pose.position.z = self.mu[2, 0]
+         msg.pose.covariance[0] = self.sigma[0, 0]
+         msg.pose.covariance[7] = self.sigma[1, 1]
+         msg.pose.covariance[14] = self.sigma[2, 2]
          msg.twist.twist.linear.x = self.linear_velocity[0]
          msg.twist.twist.linear.y = self.linear_velocity[1]
          msg.twist.twist.linear.z = self.linear_velocity[2]
@@ -146,20 +152,25 @@ class StateEstimatorNode():
             self.mu = self.mu_reset.copy()
             config.reset_mu = False
 
-         self.R = np.diag([config.Rx, config.Ry, config.Rz])
          self.Q_press = np.array([[config.Q_press]])
          self.Q_range_0 = config.Q_range_0
          self.Q_range_lin_fac = config.Q_range_lin_fac
-
-         rospy.loginfo('\nold tag coordinates:\n' + str(self.tag_coordinates))
 
          tag_system_origin = np.array([config.groups.groups.tag_system.parameters.tag_1_x, config.groups.groups.tag_system.parameters.tag_1_y, config.groups.groups.tag_system.parameters.tag_1_z])
          tag_system_orientation = config.groups.groups.tag_system.parameters.orientation
          self.calculate_tag_coordinates(tag_system_origin, tag_system_orientation)
 
-         rospy.loginfo('\nnew tag coordinates:\n' + str(self.tag_coordinates))
-
          self.c_scaling = config.scaling_variable
+
+         self.rho[0] = config.rho_x
+         self.rho[1] = config.rho_y
+         self.rho[2] = config.rho_z
+         self.phi[0] = config.phi_x
+         self.phi[1] = config.phi_y
+         self.phi[2] = config.phi_z
+         self.tau[0] = config.tau_x
+         self.tau[1] = config.tau_y
+         self.tau[2] = config.tau_z
 
       return config
 
@@ -249,8 +260,8 @@ class StateEstimatorNode():
          #   else:
          #      rospy.loginfo('\n\nmode = ' + str(mode) + '\nid = ' + str(tag_id) + '\nmu_prior = ' + str(mu_prior) + '\nh = ' + str(h) + '\nH = ' + str(H) + '\nz = ' + str(z) + '\nK = ' + str(K) + '\nmu = ' + str(self.mu) + '\nsigma_prior = ' + str(sigma_prior) + '\nsigma = ' + str(self.sigma))
          mu_ok = self.check_boundaries()
-         if not mu_ok:
-            rospy.logwarn('\n\nmode = ' + str(mode) + '\nid = ' + str(tag_id) + '\nmu_prior = ' + str(mu_prior) + '\nh = ' + str(h) + '\nz = ' + str(z) + '\nmu = ' + str(self.mu) + '\nsigma = ' + str(self.sigma))
+         #if not mu_ok:
+         #   rospy.logwarn('\n\nmode = ' + str(mode) + '\nid = ' + str(tag_id) + '\nmu_prior = ' + str(mu_prior) + '\nh = ' + str(h) + '\nz = ' + str(z) + '\nmu = ' + str(self.mu) + '\nsigma = ' + str(self.sigma))
 
    def check_boundaries(self):
       within_boundaries = True
@@ -270,14 +281,21 @@ class StateEstimatorNode():
 
    def smo(self, x):
       time = rospy.get_time()
+      if self.prev_smo_time is None:
+         self.prev_smo_time = time
+         return np.zeros(3)
       del_t = time - self.prev_smo_time
       self.prev_smo_time = time
       x1hat = np.zeros(3)
       x2hat = np.zeros(3)
       for i in range(3):
          x1hat[i] = self.x1hat_prev[i] + del_t*self.x2hat_prev[i]
-         x2hat[i] = self.x2hat_prev[i] + (del_t/self.tau) * (-self.x2hat_prev[i]-self.rho*self.sat((self.x1hat_prev[i]-self.x_prev[i])/self.phi))
-         self.x_prev[i] = x[i, 0]
+         x2hat[i] = self.x2hat_prev[i] + (del_t/self.tau[i]) * (-self.x2hat_prev[i]-self.rho[i]*self.sat((self.x1hat_prev[i]-self.x_prev[i])/self.phi[i]))
+         if x2hat[i] > self.boundaries[3+i, 1]:
+            x2hat[i] = self.boundaries[3+i, 1]
+         elif x2hat[i] < self.boundaries[3+i, 0]:
+            x2hat[i] = self.boundaries[3+i, 0]
+         self.x_prev[i] = x[i]
          self.x1hat_prev[i] = x1hat[i]
          self.x2hat_prev[i] = x2hat[i]
       return x2hat

@@ -9,6 +9,8 @@
     <arg name="launch_pitch_control" default="false"/>
     <arg name="launch_yaw_control" default="true"/>
     <arg name="use_ground_truth" default="false"/>
+    <arg name="use_motion_model" default="false"/>
+    <arg name="use_imu_acceleration" default="false"/>
     <arg name="record" default="true"/>
 
     <group if="$(arg launch_simulation)">
@@ -43,8 +45,14 @@
     </group>
 
     <param name="simulate" value="$(arg simulate)" type="bool" />
+    <param name="use_imu_acceleration" value="$(arg use_imu_acceleration)" type="bool" />
 
-    <node name="state_estimator" pkg="fav_state_estimation" type="state_estimator.py" output="screen" />
+    <group if="$(arg use_motion_model)">
+        <node name="state_estimator" pkg="fav_state_estimation" type="state_estimator.py" output="screen" />
+    </group>
+    <group unless="$(arg use_motion_model)">
+        <node name="state_estimator" pkg="fav_state_estimation" type="state_estimator_motionless.py" output="screen" />
+    </group>
     <node name="setpoints" pkg="fav_state_estimation" type="setpoints.py" output="screen" />
 
     <group if="$(arg launch_control)">
