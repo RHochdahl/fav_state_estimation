@@ -11,7 +11,7 @@
     <arg name="use_ground_truth" default="false"/>
     <arg name="use_motion_model" default="false"/>
     <arg name="use_imu_acceleration" default="false"/>
-    <arg name="record" default="true"/>
+    <arg name="record" default="false"/>
 
     <group if="$(arg launch_simulation)">
         <!-- Vehicle spawn position so that tags are seen -->
@@ -69,7 +69,7 @@
     </group>    
 
     <group if="$(arg record)">
-        <node name="record" pkg="rosbag" type="record" args="-o $(find fav_state_estimation)/bags/bag /x_setpoint /y_setpoint /z_setpoint /yaw_setpoint /mavros/setpoint_motor/setpoint /estimated_state /yaw /thrust /lateral_thrust /vertical_thrust /pressure /mavros/imu/data /range /rosout /ground_truth/state"/>
+        <node name="record" pkg="rosbag" type="record" args="-o $(find fav_state_estimation)/bags/bag /x_setpoint /y_setpoint /z_setpoint /yaw_setpoint /mavros/setpoint_motor/setpoint /estimated_state /yaw /thrust /lateral_thrust /vertical_thrust /pressure /mavros/imu/data /ranges /rosout /ground_truth/state"/>
     </group>
 
 </launch>
